@@ -25,10 +25,9 @@ public class SwimMetricExtractor
 
 	public class State
 	{
-		State(SwimState sw, StrokeState st)
+		State()
 		{
-			this.swimming = sw;
-			this.stroke = st;
+			reset();
 		}
 
 		public void reset()
@@ -39,15 +38,20 @@ public class SwimMetricExtractor
 			swimming = SwimState.SWIMMING_NOT;
 			m_LastRoll = null;
 			m_LastThrust = null;
+			m_LastPitchChange = null;
 			leftCount = 0;
 			rightCount = 0;
-			leftOrRightLast=0;
+			leftOrRightLast = 0;
 			thrustCount = 0;
 			accel_count = 0;
 			accel_mean = 0;
 			accel_sum2 = 0;
 			accel_variance = 0;
-			count=0;
+			count = 0;
+			direction_meanX = 0.;
+			direction_meanY = 0.;
+			direction_count = 0.;
+
 		}
 
 		public SwimState swimming;
@@ -67,7 +71,7 @@ public class SwimMetricExtractor
 		private EventPoint m_LastThrust = null;
 
 		private OrientationHistoryPoint m_LastOrientation = null;
-		private float m_CurrentDirection = 999.999f;
+		private double m_CurrentDirection = 999.999;
 		private long m_LengthStart = 0L;
 
 		// numbers of events (roll left/right, breaststroke kick) that have
@@ -75,13 +79,18 @@ public class SwimMetricExtractor
 		private int leftCount;
 		private int rightCount;
 		private int thrustCount;
-		private int leftOrRightLast=0;
+		private int leftOrRightLast = 0;
 
 		// statistics on the acceleration, used to identify breaststroke kicks
 		private double accel_count;
 		private double accel_mean;
 		private double accel_sum2;
 		private double accel_variance;
+		public EventPoint m_LastPitchChange;
+
+		private double direction_meanX;
+		private double direction_meanY;
+		private double direction_count;
 	};
 
 	class HistoryPoint
@@ -151,8 +160,7 @@ public class SwimMetricExtractor
 		}
 	}
 
-	private State m_State = new State(SwimState.SWIMMING_NOT,
-			StrokeState.STROKE_UNKNOWN);
+	private State m_State = new State();
 
 	private final double SWIM_MAX_ANGLE_FROM_HORIZONTAL = 0.698131701;
 	private final double ROLL_STROKE_THRESHOLD = 0.349066;
@@ -162,256 +170,314 @@ public class SwimMetricExtractor
 
 	}
 
-	float angleDifference(float angle1, float angle2)
+	double angleDifference(double angle1, double angle2)
 	{
-		float f = (float) (Math.PI - Math.abs(Math.abs(angle1 - angle2)
-				- Math.PI));
-		return f;
-		/*
-		 * double diff=Math.abs(angle1-angle2); if(diff>Math.PI) {
-		 * diff=(2.0*Math.PI-diff); } return (float) diff;
-		 */
+		// double f = (Math.PI - Math.abs(Math.abs(angle1 - angle2)
+		// - Math.PI));
+		// return f;
+
+		double diff = Math.abs(angle1 - angle2);
+		if (diff > Math.PI)
+		{
+			diff = (2.0 * Math.PI - diff);
+		}
+		return (float) diff;
+
 	}
 
 	// update the state of the swim tracking
 	public void updateState()
 	{
 		// if no data yet, then can't update state
-		if( m_State.m_LastOrientation==null)
+		if (m_State.m_LastOrientation == null)
 		{
 			return;
 		}
+		// m_State.debugVals=""+m_State.m_LastOrientation.yaw;
 
-		m_State.m_LastTimestamp=m_State.m_LastHistory.timestamp;
-		if(m_State.swimming!=SwimState.SWIMMING_NOT)
+		m_State.m_LastTimestamp = m_State.m_LastHistory.timestamp;
+		if (m_State.swimming != SwimState.SWIMMING_NOT)
 		{
-			m_State.timeInLength=m_State.m_LastTimestamp-m_State.m_LengthStart;
+			m_State.timeInLength = m_State.m_LastTimestamp
+					- m_State.m_LengthStart;
 		}
-		
+
 		// detect turns:
-		// a turn has happened when the compass direction rotates by >90 degrees:
+		// a turn has happened when the compass direction rotates by >90
+		// degrees:
 		// and we have a valid direction value already
 		// i.e. this is a turn, rather than a start
-		if(m_State.m_CurrentDirection<10.0)
+		if (m_State.m_CurrentDirection < 10.0)
 		{
-			float directionDiff=angleDifference(m_State.m_LastOrientation.yaw ,m_State.m_CurrentDirection);
-			
-			if(directionDiff>Math.PI*0.5)
+			double directionDiff = angleDifference(
+					m_State.m_LastOrientation.yaw, m_State.m_CurrentDirection);
+
+			if (directionDiff > Math.PI * 0.5)
 			{
-				// we have turned, do something about it
+				// we have turned, so this must be a new length
 				m_State.reset();
-				
-				m_State.m_LengthStart=m_State.m_LastTimestamp;
-				m_State.m_Events.add(new EventPoint(m_State.m_LastTimestamp,EventType.EVENT_TURN,0));
-				Log.e("Turned","trn");
-				m_State.m_CurrentDirection=999.0f;
+
+				m_State.m_LengthStart = m_State.m_LastTimestamp;
+				m_State.m_Events.add(new EventPoint(m_State.m_LastTimestamp,
+						EventType.EVENT_TURN, 0));
+				Log.e("Turned", "trn");
+				m_State.m_CurrentDirection = 999.0;
 				return;
 			}
-		}		
-		
+		}
+
 		// first, work out whether we're swimming or not
-		if( m_State.swimming==SwimState.SWIMMING_NOT)
+		if (m_State.swimming == SwimState.SWIMMING_NOT)
 		{
-			// if the back angle (pitch) is less than 40 degrees from horizontal, then we might
-			// be swimming (the alternative is that it isn't strapped on yet and is still
+			// if the back angle (pitch) is less than 40 degrees from
+			// horizontal, then we might
+			// be swimming (the alternative is that it isn't strapped on yet and
+			// is still
 			// in someone's hands)
-			if(Math.abs(m_State.m_LastOrientation.pitch)<SWIM_MAX_ANGLE_FROM_HORIZONTAL)
+			if (Math.abs(m_State.m_LastOrientation.pitch) < SWIM_MAX_ANGLE_FROM_HORIZONTAL)
 			{
-				m_State.m_Events.add(new EventPoint(m_State.m_LastTimestamp,EventType.EVENT_PITCH_CHANGE,0));
-				m_State.swimming=SwimState.SWIMMING_MAYBE;
-				m_State.stroke=StrokeState.STROKE_UNKNOWN;
-				// mark this as the start of the length if we 
+				// mark this as the start of the length if we
 				// haven't just turned (turning sets the lengthstart too)
-				if(m_State.m_LastOrientation.timestamp-m_State.m_LengthStart>1000000000L)
+				if (m_State.m_LastOrientation.timestamp - m_State.m_LengthStart > 1000000000L
+						&& (m_State.m_LastPitchChange == null || m_State.m_LastTimestamp
+								- m_State.m_LastPitchChange.timestamp > 1000000000L))
 				{
-					m_State.m_LengthStart=m_State.m_LastOrientation.timestamp;
+					m_State.reset();
+					m_State.m_LengthStart = m_State.m_LastOrientation.timestamp;
+				}
+				m_State.m_LastPitchChange = new EventPoint(
+						m_State.m_LastTimestamp, EventType.EVENT_PITCH_CHANGE,
+						0);
+				m_State.m_Events.add(m_State.m_LastPitchChange);
+				m_State.swimming = SwimState.SWIMMING_MAYBE;
+			} else
+			{
+				if (m_State.m_LastPitchChange != null)
+				{
+					long timeDiff = m_State.m_LastTimestamp
+							- m_State.m_LastPitchChange.timestamp;
+					if (timeDiff > 5000000000L)
+					{
+						// hanging around for 5 seconds standing up = end of
+						// length for sure
+						m_State.reset();
+					}
 				}
 			}
-		}else
+		} else
 		{
 			// if we go from horizontal to vertical (in the front to back axis)
 			// that means we are standing up (or doing a turn), or at least
 			// definitely not swimming
-			if(Math.abs(m_State.m_LastOrientation.pitch)>SWIM_MAX_ANGLE_FROM_HORIZONTAL)
+			if (Math.abs(m_State.m_LastOrientation.pitch) > SWIM_MAX_ANGLE_FROM_HORIZONTAL)
 			{
-				m_State.swimming=SwimState.SWIMMING_NOT;
-				m_State.reset();
-				m_State.m_Events.add(new EventPoint(m_State.m_LastTimestamp,EventType.EVENT_PITCH_CHANGE,1));
-				
+				m_State.swimming = SwimState.SWIMMING_NOT;
+				m_State.m_LastPitchChange = new EventPoint(
+						m_State.m_LastTimestamp, EventType.EVENT_PITCH_CHANGE,
+						1);
+				m_State.m_Events.add(m_State.m_LastPitchChange);
 				return;
 			}
 		}
-		
-		// detect roll events (flat vs on side vs upside down)
-		if(m_State.swimming!=SwimState.SWIMMING_NOT && m_State.timeInLength>1000000000L)
-		{
-			int rollState=-5;
 
-			OrientationHistoryPoint ori=m_State.m_LastOrientation;
-			if(Math.abs(ori.roll)>Math.PI*0.5)
+		// detect roll events (flat vs on side vs upside down)
+		if (m_State.swimming != SwimState.SWIMMING_NOT
+				&& m_State.timeInLength > 1000000000L)
+		{
+			int rollState = -5;
+
+			OrientationHistoryPoint ori = m_State.m_LastOrientation;
+			if (Math.abs(ori.roll) > Math.PI * 0.5)
 			{
 				// upside down roll events
-				if(Math.abs(ori.roll)>Math.PI-ROLL_STROKE_THRESHOLD)
+				if (Math.abs(ori.roll) > Math.PI - ROLL_STROKE_THRESHOLD)
 				{
 					// upside down flat
-					rollState=10;
-				}else if(ori.roll<0)
+					rollState = 10;
+				} else if (ori.roll < 0)
 				{
 					// upside down left
-					rollState=11;
-				}else
+					rollState = 11;
+				} else
 				{
 					// upside down right
-					rollState=9;
+					rollState = 9;
 				}
-			}else if(ori.roll>ROLL_STROKE_THRESHOLD)
+			} else if (ori.roll > ROLL_STROKE_THRESHOLD)
 			{
 				// 20 degrees one way
-				rollState=1;
-			}else if(ori.roll<-ROLL_STROKE_THRESHOLD)
+				rollState = 1;
+			} else if (ori.roll < -ROLL_STROKE_THRESHOLD)
 			{
 				// 20 degrees the other way
-				rollState=-1;
-			}else
+				rollState = -1;
+			} else
 			{
-				rollState=0;
+				rollState = 0;
 			}
-			if(m_State.m_LastRoll==null || m_State.m_LastRoll.m_Value!=rollState)
+			if (m_State.m_LastRoll == null
+					|| m_State.m_LastRoll.m_Value != rollState)
 			{
-				m_State.m_LastRoll=new EventPoint(m_State.m_LastTimestamp,EventType.EVENT_ROLL_CHANGE,rollState);
+				m_State.m_LastRoll = new EventPoint(m_State.m_LastTimestamp,
+						EventType.EVENT_ROLL_CHANGE, rollState);
 				m_State.m_Events.add(m_State.m_LastRoll);
-				if( rollState==-1 || rollState==9)
+				if (rollState == -1 || rollState == 9)
 				{
-					if(m_State.leftOrRightLast!=-1)
+					if (m_State.leftOrRightLast != -1)
 					{
-						m_State.leftCount+=1;
-						m_State.leftOrRightLast=-1;
+						m_State.leftCount += 1;
+						m_State.leftOrRightLast = -1;
 					}
-				}else if( rollState==1 || rollState==11)
+				} else if (rollState == 1 || rollState == 11)
 				{
-					if(m_State.leftOrRightLast!=1)
+					if (m_State.leftOrRightLast != 1)
 					{
-						m_State.rightCount+=1;
-						m_State.leftOrRightLast=1;
+						m_State.rightCount += 1;
+						m_State.leftOrRightLast = 1;
 					}
 				}
 			}
 		}
 
-		
-		
-		
-		// detect thrust events (breaststroke kicks), only if we have not detected that we're swimming crawl already
-		if(m_State.swimming!=SwimState.SWIMMING_NOT && m_State.timeInLength>1000000000L)
+		if (m_State.swimming != SwimState.SWIMMING_NOT
+				&& m_State.timeInLength > 1000000000L
+				&& m_State.m_LastHistory instanceof OrientationHistoryPoint)
 		{
-			if(m_State.m_LastHistory instanceof AccelHistoryPoint)
-			{	
-				double value=0.0;
-				AccelHistoryPoint pt = ((AccelHistoryPoint)m_State.m_LastHistory);
-				if(pt.isLinearAcceleration)
+			m_State.direction_count += 1.0;
+			m_State.direction_meanX += Math.cos(m_State.m_LastOrientation.yaw);
+			m_State.direction_meanY += Math.sin(m_State.m_LastOrientation.yaw);
+			if (m_State.direction_count > 100.0)
+			{
+				m_State.m_CurrentDirection = Math.atan2(
+						m_State.direction_meanY, m_State.direction_meanX);
+				m_State.debugVals = "" + m_State.m_CurrentDirection;
+			}
+		}
+
+		// detect thrust events (breaststroke kicks), only if we have not
+		// detected that we're swimming crawl already
+		if (m_State.swimming != SwimState.SWIMMING_NOT
+				&& m_State.timeInLength > 1000000000L)
+		{
+			if (m_State.m_LastHistory instanceof AccelHistoryPoint)
+			{
+				double value = 0.0;
+				AccelHistoryPoint pt = ((AccelHistoryPoint) m_State.m_LastHistory);
+				if (pt.isLinearAcceleration)
 				{
-					value=-pt.y;
-				}else
+					value = -pt.y;
+				} else
 				{
-					value=Math.sqrt(pt.x*pt.x+pt.y*pt.y+pt.z*pt.z)-SensorManager.GRAVITY_EARTH;
+					value = Math.sqrt(pt.x * pt.x + pt.y * pt.y + pt.z * pt.z)
+							- SensorManager.GRAVITY_EARTH;
 				}
-				m_State.debugVals=""+value;
-				m_State.accel_count+=1.0;
-				double delta=value-m_State.accel_mean;
-				m_State.accel_mean+=delta/m_State.accel_count;
-				m_State.accel_sum2+=delta*(value-m_State.accel_mean);
-				
-				boolean tooClose=true;
-				if(m_State.m_LastThrust==null || m_State.m_LastTimestamp-m_State.m_LastThrust.timestamp>500000000L)
+				m_State.accel_count += 1.0;
+				double delta = value - m_State.accel_mean;
+				m_State.accel_mean += delta / m_State.accel_count;
+				m_State.accel_sum2 += delta * (value - m_State.accel_mean);
+
+				boolean tooClose = true;
+				if (m_State.m_LastThrust == null
+						|| m_State.m_LastTimestamp
+								- m_State.m_LastThrust.timestamp > 500000000L)
 				{
-					tooClose=false;
+					tooClose = false;
 				}
-				
-				m_State.accel_variance=m_State.accel_sum2 / (m_State.accel_count-1.0);
-				
-				
-				if(m_State.accel_count>50.0 && tooClose==false)
+
+				m_State.accel_variance = m_State.accel_sum2
+						/ (m_State.accel_count - 1.0);
+
+				if (m_State.accel_count > 50.0 && tooClose == false)
 				{
-					// 2 standard deviations above mean = a thrust (and a minimum of 1m/s/s)
-					double valueOffset=value-m_State.accel_mean;
-					if(valueOffset*valueOffset>m_State.accel_variance*4.0 && (!pt.isLinearAcceleration || value>1.0))
+					// 2 standard deviations above mean = a thrust (and a
+					// minimum of 1m/s/s)
+					double valueOffset = value - m_State.accel_mean;
+					if (valueOffset * valueOffset > m_State.accel_variance * 4.0
+							&& (!pt.isLinearAcceleration || value > 1.0))
 					{
-						Log.e("acc","acc:"+value+" count:"+m_State.accel_count+" mean:"+m_State.accel_mean+" var:"+m_State.accel_variance);
+						Log.v("acc", "acc:" + value + " count:"
+								+ m_State.accel_count + " mean:"
+								+ m_State.accel_mean + " var:"
+								+ m_State.accel_variance);
 						// detected a thrust
-						m_State.thrustCount+=1;
-						m_State.m_LastThrust=new EventPoint(m_State.m_LastTimestamp,EventType.EVENT_THRUST,0);
+						m_State.thrustCount += 1;
+						m_State.m_LastThrust = new EventPoint(
+								m_State.m_LastTimestamp,
+								EventType.EVENT_THRUST, 0);
 						m_State.m_Events.add(m_State.m_LastThrust);
-					}			
+					}
 				}
 			}
 		}
-		
-		// detect stroke - if we've already detected lots of roll, then rule out breaststroke
-		// but if we detect breaststroke then let it switch to crawl	
-		if(m_State.swimming!=SwimState.SWIMMING_NOT)
+
+		// detect stroke - if we've already detected lots of roll, then rule out
+		// breaststroke
+		// but if we detect breaststroke then let it switch to crawl
+		if (m_State.swimming != SwimState.SWIMMING_NOT)
 		{
-			EventPoint lastRoll=m_State.m_LastRoll;
-			if(m_State.stroke!=StrokeState.STROKE_CRAWL && m_State.stroke!=StrokeState.STROKE_BACK)
+			EventPoint lastRoll = m_State.m_LastRoll;
+			if (m_State.stroke != StrokeState.STROKE_CRAWL
+					&& m_State.stroke != StrokeState.STROKE_BACK)
 			{
 				// look for thrust events
 				// or left/right events
-				if(m_State.leftCount+m_State.rightCount>=3)
+				if (m_State.leftCount + m_State.rightCount >= 3)
 				{
-					m_State.stroke=StrokeState.STROKE_CRAWL;
-					if(lastRoll!=null)
+					m_State.stroke = StrokeState.STROKE_CRAWL;
+					if (lastRoll != null)
 					{
 						// just choose front or back crawl
-						if(lastRoll.m_Value>1)
+						if (lastRoll.m_Value > 1)
 						{
-							m_State.stroke=StrokeState.STROKE_BACK;
-						}					
+							m_State.stroke = StrokeState.STROKE_BACK;
+						}
 					}
-				}else if(m_State.thrustCount>1)
+				} else if (m_State.thrustCount > 1)
 				{
-					m_State.stroke=StrokeState.STROKE_BREAST;
+					m_State.stroke = StrokeState.STROKE_BREAST;
 				}
-			}else
+			} else
 			{
 				// some kind of crawl, just use upsidedownness to detect it
-				if(lastRoll!=null)
+				if (lastRoll != null)
 				{
 					// just choose front or back crawl
-					if(lastRoll.m_Value>1)
+					if (lastRoll.m_Value > 1)
 					{
-						m_State.stroke=StrokeState.STROKE_BACK;
-					}else
+						m_State.stroke = StrokeState.STROKE_BACK;
+					} else
 					{
-						m_State.stroke=StrokeState.STROKE_CRAWL;
-					}					
+						m_State.stroke = StrokeState.STROKE_CRAWL;
+					}
 				}
 			}
 		}
-		
+
 		// if we know the stroke, then count strokes since this length started
-		if( m_State.swimming != SwimState.SWIMMING_NOT && m_State.stroke!=StrokeState.STROKE_UNKNOWN)			
+		if (m_State.swimming != SwimState.SWIMMING_NOT
+				&& m_State.stroke != StrokeState.STROKE_UNKNOWN)
 		{
-			int strokes=0;
-			switch(m_State.stroke)
+			int strokes = 0;
+			switch (m_State.stroke)
 			{
 			case STROKE_BACK:
 			case STROKE_CRAWL:
 				// use the roll, and count a stroke each time they
 				// roll >20 degrees to either side
-				strokes=m_State.leftCount+m_State.rightCount;
+				strokes = m_State.leftCount + m_State.rightCount;
 				break;
 			case STROKE_BREAST:
 			case STROKE_BUTTERFLY:
-				strokes=m_State.thrustCount;
+				strokes = m_State.thrustCount;
 				break;
 			case STROKE_UNKNOWN:
 			default:
 				// SHOULD NEVER GET HERE
 				break;
 			}
-			m_State.count=strokes;			
-		}			
+			m_State.count = strokes;
+		}
 	}
-
 
 	public void onOrientationChange(long timestamp, float yaw, float pitch,
 			float roll)

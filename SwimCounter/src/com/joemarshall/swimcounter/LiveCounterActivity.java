@@ -187,8 +187,11 @@ public class LiveCounterActivity extends Activity implements
 				"%2.2f", value));
 
 		((TextView) findViewById(R.id.debug1)).setText(String.format(
-				"%2.2f,%2.2f,%2.2f", filter_gravity[0], filter_gravity[1],
-				filter_gravity[2]));
+				"%2.2f,%2.2f,%2.2f", m_Orientation [0], m_Orientation [1],
+				m_Orientation [2]));
+//		((TextView) findViewById(R.id.debug1)).setText(String.format(
+//				"%2.2f,%2.2f,%2.2f", filter_gravity[0], filter_gravity[1],
+//				filter_gravity[2]));
 		((TextView) findViewById(R.id.debug2)).setText(state.debugVals);
 	}
 
