@@ -71,7 +71,7 @@ public class SwimMetricExtractor
 			rightCount = 0;
 			leftOrRightLast = 0;
 			thrustCount = 0;
-			pd=new PeakDetector();
+			pd.clear();
 			count = 0;
 			direction_meanX = 0.;
 			direction_meanY = 0.;
@@ -144,6 +144,16 @@ public class SwimMetricExtractor
 		long lastTimestamp=0L;
 		
 		float fmin=0f,fmax=0f,pmin=0f,pmax=0f;
+		
+		public void clear()
+		{
+			size=0;
+			nextPos=0;
+			fmin=0;
+			fmax=0;
+			pmin=0;
+			pmax=0;
+		}
 		
 		public void addValue(long timestamp,float value)
 		{
@@ -220,9 +230,13 @@ public class SwimMetricExtractor
 	{
 		public long timestamp;
 
-		public HistoryPoint(long timestamp)
+		public HistoryPoint()
 		{
-			this.timestamp = timestamp;
+		}
+		
+		public void init(long timestamp)
+		{
+			this.timestamp = timestamp;			
 		}
 	};
 
@@ -232,13 +246,18 @@ public class SwimMetricExtractor
 		public float roll;
 		public float yaw;
 
-		public OrientationHistoryPoint(long timestamp, float pitch, float roll,
+		public OrientationHistoryPoint()
+		{
+		}
+		
+		public void init(long timestamp, float pitch, float roll,
 				float yaw)
 		{
-			super(timestamp);
+			super.init(timestamp);
 			this.pitch = pitch;
 			this.roll = roll;
 			this.yaw = yaw;
+			
 		}
 	}
 
@@ -249,10 +268,14 @@ public class SwimMetricExtractor
 		public float z;
 		public boolean isLinearAcceleration;
 
-		public AccelHistoryPoint(long timestamp, float x, float y, float z,
+		public AccelHistoryPoint()
+		{		
+		}
+		
+		public void init(long timestamp, float x, float y, float z,
 				boolean isLinearAcceleration)
 		{
-			super(timestamp);
+			super.init(timestamp);
 			this.x = x;
 			this.y = y;
 			this.z = z;
@@ -269,14 +292,15 @@ public class SwimMetricExtractor
 		EVENT_SWIMSTATE // 0=not swimming, 1= maybe, 2=definitely swimming
 	};
 
-	class EventPoint extends HistoryPoint
+	class EventPoint 
 	{
 		public EventType m_Type;
 		public int m_Value;
+		public long timestamp;
 
 		public EventPoint(long timestamp, EventType type, int value)
 		{
-			super(timestamp);
+			this.timestamp=timestamp;
 			// TODO Auto-generated constructor stub
 			m_Type = type;
 			m_Value = value;
@@ -748,24 +772,27 @@ public class SwimMetricExtractor
 		
 		}
 		m_State.reset();
-		
 	}
 
+	
+	OrientationHistoryPoint oriPoint=new OrientationHistoryPoint();
 	public void onOrientationChange(long timestamp, float yaw, float pitch,
 			float roll)
 	{
-		OrientationHistoryPoint op = new OrientationHistoryPoint(timestamp,
+		oriPoint.init(timestamp,
 				pitch, roll, yaw);
-		m_State.lastHistory = op;
-		m_State.lastOrientation = op;
+		m_State.lastHistory = oriPoint;
+		m_State.lastOrientation = oriPoint;
 		m_State.lastTimestamp = timestamp;
 		updateState();
 	}
 
+	AccelHistoryPoint accPoint=new AccelHistoryPoint();
 	public void onLinearAcceleration(long timestamp, float x, float y, float z)
 	{
 		m_State.lastTimestamp = timestamp;
-		m_State.lastHistory = new AccelHistoryPoint(timestamp, x, y, z, true);
+		accPoint.init(timestamp, x, y, z, true);
+		m_State.lastHistory = accPoint;
 		updateState();
 	}
 
@@ -777,7 +804,8 @@ public class SwimMetricExtractor
 	public void onGlobalAcceleration(long timestamp, float x, float y, float z)
 	{
 		m_State.lastTimestamp = timestamp;
-		m_State.lastHistory = new AccelHistoryPoint(timestamp, x, y, z, false);
+		accPoint.init(timestamp, x, y, z, false);
+		m_State.lastHistory = accPoint;
 		updateState();
 	}
 

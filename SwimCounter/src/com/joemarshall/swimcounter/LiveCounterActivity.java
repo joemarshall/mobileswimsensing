@@ -250,6 +250,7 @@ public class LiveCounterActivity extends Activity implements
 		filter_linear_accel[2] = event.values[2] - filter_gravity[2];
 	}
 
+	long lastDisplayTimestamp=0L;
 	@Override
 	public void onSensorChanged(SensorEvent event)
 	{
@@ -290,7 +291,11 @@ public class LiveCounterActivity extends Activity implements
 		}
 
 		State state = m_Extractor.getState();
-		updateDisplay(state);
+		if(event.timestamp-lastDisplayTimestamp>50000000)
+		{
+			updateDisplay(state);
+			lastDisplayTimestamp=event.timestamp;
+		}
 	}
 
 	private void updateDisplay(State state)
