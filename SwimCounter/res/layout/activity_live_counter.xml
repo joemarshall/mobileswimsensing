@@ -4,117 +4,16 @@
     android:layout_height="match_parent"
     android:gravity="center_vertical"
     android:orientation="vertical"
-    android:paddingBottom="@dimen/activity_vertical_margin"
-    android:paddingLeft="@dimen/activity_horizontal_margin"
-    android:paddingRight="@dimen/activity_horizontal_margin"
-    android:paddingTop="@dimen/activity_vertical_margin"
+    android:paddingBottom="0px"
+    android:paddingLeft="0px"
+    android:paddingRight="0px"
+    android:paddingTop="0px"
     tools:context=".LiveCounterActivity" >
 
-    <LinearLayout
-        android:layout_width="fill_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="horizontal" >
-
-        <TextView
-            android:id="@+id/textView1"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="right|bottom"
-            android:gravity="right"
-            android:text="@string/swim_style"
-            android:textAppearance="?android:attr/textAppearanceLarge"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/swim_style"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center|bottom"
-            android:gravity="center_horizontal"
-            android:text="0"
-			android:textSize="32sp"
-            android:layout_weight="1" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="fill_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="horizontal" >
-
-        <TextView
-            android:id="@+id/textView2"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="right|center"
-            android:gravity="right"
-            android:text="@string/swim_strokes"
-            android:textAppearance="?android:attr/textAppearanceLarge"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/swim_strokes"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:gravity="center_horizontal"
-            android:text="1"
-			android:textSize="32sp"
-            android:layout_weight="1" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="fill_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="horizontal" >
-
-        <TextView
-            android:id="@+id/textView3"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="right|top"
-            android:gravity="right"
-            android:text="@string/swim_time"
-            android:textAppearance="?android:attr/textAppearanceLarge"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/swim_time"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center|top"
-            android:gravity="center_horizontal"
-            android:text="2"
-			android:textSize="32sp"
-            android:layout_weight="1" />
-    </LinearLayout>
-    <LinearLayout
-        android:layout_width="fill_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="horizontal" >
-
-        <TextView
-            android:id="@+id/debug1"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="right|top"
-            android:gravity="right"
-            android:text="@string/swim_time"
-            android:textAppearance="?android:attr/textAppearanceLarge"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/debug2"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center|top"
-            android:gravity="center_horizontal"
-            android:text="2"
-			android:textSize="32sp"
-            android:layout_weight="1" />
-    </LinearLayout>
+    <WebView
+        android:id="@+id/mainWebView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" 
+        android:layout_margin="0px"/>
     
 </LinearLayout>

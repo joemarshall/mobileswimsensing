@@ -2,16 +2,6 @@ package com.joemarshall.swimcounter;
 
 import java.util.ArrayList;
 
-// TODO: given we don't keep history
-//       could reuse event points
-
-// TODO: Log the data from this, count lengths etc.
-//       Perhaps also sanity check lengths by dumping two lengths
-//       if they're in the same direction (keep the one with most
-//       strokes or the one which abuts a good length)
-//
-
-
 public class SwimMetricExtractor
 {
 	interface Callback
@@ -35,13 +25,27 @@ public class SwimMetricExtractor
 
 	enum StrokeState
 	{
-		STROKE_UNKNOWN, STROKE_BREAST, STROKE_CRAWL, STROKE_BACK, STROKE_BUTTERFLY // NB:
-																					// not
-																					// sure
-																					// how
-																					// to
-																					// detect
-																					// butterfly vs breaststroke
+		STROKE_UNKNOWN("Unknown"), STROKE_BREAST("Breast"), STROKE_CRAWL("Crawl"), STROKE_BACK("Back"), STROKE_BUTTERFLY("Fly"); 
+		
+		private String m_Text;
+
+		// NB:
+		// not
+		// sure
+		// how
+		// to
+		// detect
+		// butterfly vs breaststroke
+
+		private StrokeState(String text)
+		{
+			this.m_Text=text;
+		}
+		
+		public String toString()
+		{
+			return m_Text;
+		}
 	}
 
 	enum EndType
@@ -51,11 +55,30 @@ public class SwimMetricExtractor
 		END_NOT_TURNED // new length has started, but not straight after a turn
 	};
 	
+	enum TurnType
+	{
+		TURN_STOP("Stopped"),
+		TURN_FLIP("Flip"),
+		TURN_OPEN("Open turn");
+		
+		private String m_Text;
+		TurnType(String text)
+		{
+			m_Text = text;
+		}
+		
+		public String toString()
+		{
+			return m_Text;
+		}
+	}
+	
 	
 	public class State
 	{
 		State()
 		{
+			taps=0;
 			reset();
 		}
 
@@ -93,7 +116,7 @@ public class SwimMetricExtractor
 
 		public String debugVals = "";
 
-		private long lastTimestamp = 0L;
+		public long lastTimestamp = 0L;
 		// history of state changes
 		private ArrayList<EventPoint> events = new ArrayList<EventPoint>(1000);
 
@@ -121,110 +144,14 @@ public class SwimMetricExtractor
 		private double direction_meanY;
 		private double direction_count;
 		
-		PeakDetector pd=new PeakDetector();
+		// detects breaststroke
+		SinglePeakDetector pd=new SinglePeakDetector();
+		TapDetector td=new TapDetector();
+		public int taps;
+		public boolean isTumbleTurn;
 	};
 
-	// detects peaks by:
-	// 1)collecting a 1 second buffer
-	// 2)firing a peak if:
-	//   a)first .8 seconds = flattish (small difference in max/min)
-	//   b)last .2 seconds = steep rise (big difference in max/min)
-	//
-	//  ie. (fmax - fmin)[flatpart]<0.25*(pmax-pmin)[peak part]
-	//  and it is rising above in raw value, 
-	//  ie. pmax > 0.25* fmax
-	//  
-	class PeakDetector
-	{
-		// one second worth of values
-		// (we only accept values once per 100th of a second)
-		float []oneSecondLoop=new float[100];
-		int nextPos=0;
-		int size=0;
-		long lastTimestamp=0L;
-		
-		float fmin=0f,fmax=0f,pmin=0f,pmax=0f;
-		
-		public void clear()
-		{
-			size=0;
-			nextPos=0;
-			fmin=0;
-			fmax=0;
-			pmin=0;
-			pmax=0;
-		}
-		
-		public void addValue(long timestamp,float value)
-		{
-			boolean added=false;
-			if(lastTimestamp==0L)
-			{
-				lastTimestamp=timestamp;
-				insert(value);
-				added=true;
-			}else
-			{
-				added=true;
-				while(timestamp-lastTimestamp>10000000L)
-				{
-					lastTimestamp+=10000000L;
-					insert(value);
-				}
-			}
-			if(size==100 && added)
-			{
-				int curPos=nextPos;
-				fmin=oneSecondLoop[curPos];
-				fmax=fmin;
-				for(int c=0;c<80;c++)
-				{
-					float val=oneSecondLoop[curPos];
-					curPos++;
-					curPos%=100;
-					fmin=Math.min(fmin, val);
-					fmax=Math.max(fmax, val);
-				}
-				pmin=oneSecondLoop[curPos];
-				pmax=pmin;
-				for(int c=0;c<20;c++)
-				{
-					float val=oneSecondLoop[curPos];
-					curPos++;
-					curPos%=100;
-					pmin=Math.min(pmin, val);
-					pmax=Math.max(pmax, val);
-				}				
-			}
-		}
-		
-		private void insert(float value)
-		{
-			oneSecondLoop[nextPos]=value;
-			nextPos=(nextPos+1)%100;
-			if(size<100)
-			{
-				size++;
-			}			
-		}
-		
-		public boolean isPeak()
-		{
-//			m_Callback.logError("peak",String.format("%f:%f:%f:%f", fmin,fmax,pmin,pmax));
-			// not a peak if <2m/s/s
-			if(pmax<2f)
-			{
-				return false;
-			}
-			// not a peak if pmax<fmax+((fmax-fmin))
-			if(pmax<fmax+((fmax-fmin)))
-			{
-				return false;
-			}
-			return true;
-		}
-		
-	}
+	
 	
 	class HistoryPoint
 	{
@@ -351,6 +278,19 @@ public class SwimMetricExtractor
 					- m_State.lengthStart;
 		}
 
+		if(m_State.lastHistory instanceof AccelHistoryPoint)
+		{
+			AccelHistoryPoint at=(AccelHistoryPoint) m_State.lastHistory ;
+			m_State.td.addValue(at.timestamp, at.z);
+			m_State.taps=m_State.td.numPeaks();
+			
+			m_State.debugVals=""+m_State.taps+":\n"+at.z;
+		}else
+		{
+//			m_Callback.logInfo("pitch",""+m_State.lastOrientation.pitch);
+		}
+		
+		
 		// detect turns:
 		// a turn has happened when the compass direction rotates by >90
 		// degrees:
@@ -360,7 +300,7 @@ public class SwimMetricExtractor
 		{
 			double directionDiff = angleDifference(
 					m_State.lastOrientation.yaw, m_State.currentDirection);
-
+//			m_Callback.logInfo("dir", String.format("%02.2f : %02.2f : %02.2f",m_State.currentDirection,m_State.lastOrientation.yaw,directionDiff));
 			if (directionDiff > Math.PI * 0.5)
 			{
 				// we have turned, so this must be a new length
@@ -371,11 +311,15 @@ public class SwimMetricExtractor
 					m_State.lengthStart = m_State.lastTimestamp;
 					m_State.addEvent(new EventPoint(m_State.lastTimestamp,
 							EventType.EVENT_START, 1));
-					m_Callback.logInfo("Turned", "trn");
+//					m_Callback.logError("dir", String.format("trn: %02.2f : %02.2f : %02.2f",m_State.currentDirection,m_State.lastOrientation.yaw,directionDiff));
 					
 				}
 				m_State.currentDirection = 999.0;
 				m_State.swimming = SwimState.SWIMMING_NOT;
+				m_State.direction_count = 0;
+				m_State.direction_meanX = 0;
+				m_State.direction_meanY = 0;
+				
 				return;
 			}
 		}
@@ -403,7 +347,6 @@ public class SwimMetricExtractor
 					// after a turn, we did the turn
 					// need to finalise the turn length
 					onEndOfLength(EndType.END_TURNED);
-					
 				}else
 				{
 					// this was not a turn, finalize the previous length
@@ -445,9 +388,18 @@ public class SwimMetricExtractor
 				m_State.lastPitchChange = new EventPoint(
 						m_State.lastTimestamp, EventType.EVENT_PITCH_CHANGE,
 						1);
+				if(m_State.lastOrientation.pitch > SWIM_MAX_ANGLE_FROM_HORIZONTAL)
+				{
+					// pointing downwards, i.e. doing a tumble turn
+					m_State.isTumbleTurn=true;
+				}else
+				{
+					m_State.isTumbleTurn=false;
+				}
 				m_State.addEvent(m_State.lastPitchChange);
 				return;
 			}
+			
 		}
 
 		// detect roll events (flat vs on side vs upside down)
@@ -538,7 +490,7 @@ public class SwimMetricExtractor
 					}
 					break;
 				}
-				if(rollState!=0)
+				if(rollState!=0 && rollState!=10)
 				{
 					m_State.leftOrRightLast =rollState;
 				}
@@ -556,7 +508,7 @@ public class SwimMetricExtractor
 			{
 				m_State.currentDirection = Math.atan2(
 						m_State.direction_meanY, m_State.direction_meanX);
-				m_State.debugVals = "" + m_State.currentDirection;
+//				m_State.debugVals = "" + m_State.currentDirection;
 			}
 		}
 
@@ -673,12 +625,12 @@ public class SwimMetricExtractor
 	
 	class LengthStatistics
 	{
-		public boolean turned=false;
 		public long lengthTime=0;		
 		public int strokes=0;
 		public StrokeState stroke;
 		public long lengthStart=0;
 		public double direction=0;
+		public TurnType turnType=TurnType.TURN_STOP;
 
 		public LengthStatistics(State state)
 		{
@@ -734,6 +686,7 @@ public class SwimMetricExtractor
 //				Log.e("length","not turned after turn");
 				// if there was a possible turn, then write it
 				// but as a finished lap not as a turn
+				m_FinishedLength.turnType=TurnType.TURN_STOP;
 				m_FinishedLength.write();
 				m_PreviousLength=m_FinishedLength;
 				m_FinishedLength=null;
@@ -743,18 +696,23 @@ public class SwimMetricExtractor
 				// no possible turn, just write out the last length
 				// from whenever it finished
 				m_PreviousLength=new LengthStatistics(m_State);
+				m_PreviousLength.turnType=TurnType.TURN_STOP;
 				m_PreviousLength.write();
 			}
 			break;
 		case END_TURNED:
 			if(m_FinishedLength!=null && m_State.events.size()>0)
 			{
+				if( m_State.isTumbleTurn)
+				{
+					m_FinishedLength.turnType=TurnType.TURN_FLIP;
+				}
 				long lengthEndTime=m_State.events.get(0).timestamp;
 				m_FinishedLength.lengthTime=lengthEndTime-m_FinishedLength.lengthStart;
-				m_FinishedLength.turned=true;
 				m_FinishedLength.write();
 				m_PreviousLength=m_FinishedLength;
 				m_FinishedLength=null;
+				
 //				Log.e("length","good turn");
 			}else
 			{
@@ -768,6 +726,16 @@ public class SwimMetricExtractor
 			// the person standing up
 //			Log.e("length","turning");
 			m_FinishedLength=new LengthStatistics(m_State);
+			if( m_State.isTumbleTurn)
+			{
+				m_Callback.logError("trn", "tumb");
+				
+				m_FinishedLength.turnType=TurnType.TURN_FLIP;
+			}else
+			{
+				m_Callback.logError("trn", "not");
+				m_FinishedLength.turnType=TurnType.TURN_OPEN;
+			}
 			break;
 		
 		}
@@ -784,6 +752,7 @@ public class SwimMetricExtractor
 		m_State.lastHistory = oriPoint;
 		m_State.lastOrientation = oriPoint;
 		m_State.lastTimestamp = timestamp;
+
 		updateState();
 	}
 
@@ -800,7 +769,7 @@ public class SwimMetricExtractor
 	{
 		return m_State;
 	}
-
+	
 	public void onGlobalAcceleration(long timestamp, float x, float y, float z)
 	{
 		m_State.lastTimestamp = timestamp;
